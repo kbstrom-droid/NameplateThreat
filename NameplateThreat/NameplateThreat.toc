@@ -1,0 +1,8 @@
+## Interface: 120000
+## Title: Nameplate Threat
+## Notes: Shows threat difference (or just tank status colour) on enemy nameplates.
+## Author: you
+## Version: 0.1.0
+## SavedVariables: NameplateThreatDB
+
+NameplateThreat.lua
