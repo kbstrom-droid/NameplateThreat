@@ -19,12 +19,20 @@ local COLORS = {
 -- Helpers
 ---------------------------------------------------------------------------
 
+-- Group unit list is cached and only rebuilt when the roster or pets change.
+-- In a raid, "raidN" includes the player (and "raidpetN" the player's pet), so those
+-- are skipped; otherwise the player counts twice, the runner-up threat equals your own,
+-- and the differential is always 0 ("!!!") when you tank.
+local groupCache
+
 local function GroupUnits()
+    if groupCache then return groupCache end
     local units = { "player", "pet" }
     if IsInRaid() then
         for i = 1, GetNumGroupMembers() do
-            units[#units + 1] = "raid" .. i
-            units[#units + 1] = "raidpet" .. i
+            local u, p = "raid" .. i, "raidpet" .. i
+            if not UnitIsUnit(u, "player") then units[#units + 1] = u end
+            if not UnitIsUnit(p, "pet") then units[#units + 1] = p end
         end
     elseif IsInGroup() then
         for i = 1, GetNumSubgroupMembers() do
@@ -32,6 +40,7 @@ local function GroupUnits()
             units[#units + 1] = "partypet" .. i
         end
     end
+    groupCache = units
     return units
 end
 
@@ -47,9 +56,15 @@ local function GetText(unit)
     if not plate then return end
     local fs = plate.NTText
     if not fs then
-        fs = plate:CreateFontString(nil, "OVERLAY")
-        fs:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
-        fs:SetPoint("RIGHT", plate, "LEFT", -4, 0)
+        -- pcall: some nameplate frames may be protected/forbidden under the new rules
+        local ok, created = pcall(function()
+            local f = plate:CreateFontString(nil, "OVERLAY")
+            f:SetFont(STANDARD_TEXT_FONT, 14, "OUTLINE")
+            f:SetPoint("RIGHT", plate, "LEFT", -4, 0)
+            return f
+        end)
+        if not ok then return end
+        fs = created
         plate.NTText = fs
     end
     return fs
@@ -130,13 +145,15 @@ end
 local usingFallback = false
 
 local function UpdateUnit(unit)
-    local fs = GetText(unit)
-    if not fs then return end
-
+    -- Check the unit first so no text objects are created on friendly/player plates
     if UnitIsPlayer(unit) or not UnitCanAttack("player", unit) then
-        fs:SetText("")
+        local plate = C_NamePlate.GetNamePlateForUnit(unit)
+        if plate and plate.NTText then plate.NTText:SetText("") end
         return
     end
+
+    local fs = GetText(unit)
+    if not fs then return end
 
     local colour, text
     local ok, c, t = pcall(ComputeFull, unit)
@@ -179,6 +196,7 @@ f:RegisterEvent("NAME_PLATE_UNIT_REMOVED")
 f:RegisterEvent("UNIT_THREAT_LIST_UPDATE")
 f:RegisterEvent("UNIT_THREAT_SITUATION_UPDATE")
 f:RegisterEvent("GROUP_ROSTER_UPDATE")
+f:RegisterEvent("UNIT_PET")
 f:RegisterEvent("PLAYER_TARGET_CHANGED")
 
 f:SetScript("OnEvent", function(_, event, arg1)
@@ -192,6 +210,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
         local plate = C_NamePlate.GetNamePlateForUnit(arg1)
         if plate and plate.NTText then plate.NTText:SetText("") end
     else
+        if event == "GROUP_ROSTER_UPDATE" or event == "UNIT_PET" then
+            groupCache = nil
+        end
         dirty = true
     end
 end)
